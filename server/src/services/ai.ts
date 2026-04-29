@@ -1,9 +1,110 @@
-import { OpenRouter } from '@openrouter/sdk';
 import type { AIAnalysis } from '../types.js';
 
-const openRouter = new OpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY ?? ''
-});
+type ChatMessage = {
+  role: 'system' | 'user';
+  content: string;
+};
+
+type AIProvider = 'openrouter' | 'minimax' | 'openai-compatible';
+
+interface AIProviderConfig {
+  provider: AIProvider;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+}
+
+interface ChatCompletionResponse {
+  choices?: Array<{
+    message?: {
+      content?: unknown;
+    };
+  }>;
+}
+
+function normalizeBaseUrl(baseUrl: string): string {
+  return baseUrl.replace(/\/+$/, '');
+}
+
+function getAIConfig(): AIProviderConfig | null {
+  const provider = (process.env.AI_PROVIDER || 'openrouter').toLowerCase() as AIProvider;
+
+  if (provider === 'minimax') {
+    const apiKey = process.env.MINIMAX_API_KEY || process.env.AI_API_KEY || '';
+    if (!apiKey) return null;
+
+    return {
+      provider,
+      apiKey,
+      baseUrl: normalizeBaseUrl(process.env.MINIMAX_BASE_URL || 'https://api.minimaxi.com/v1'),
+      model: process.env.MINIMAX_MODEL || process.env.AI_MODEL || 'MiniMax-M2.7'
+    };
+  }
+
+  if (provider === 'openai-compatible') {
+    const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY || process.env.AI_API_KEY || '';
+    const baseUrl = process.env.OPENAI_COMPATIBLE_BASE_URL || process.env.AI_BASE_URL || '';
+    const model = process.env.OPENAI_COMPATIBLE_MODEL || process.env.AI_MODEL || '';
+    if (!apiKey || !baseUrl || !model) return null;
+
+    return {
+      provider,
+      apiKey,
+      baseUrl: normalizeBaseUrl(baseUrl),
+      model
+    };
+  }
+
+  const apiKey = process.env.OPENROUTER_API_KEY || process.env.AI_API_KEY || '';
+  if (!apiKey) return null;
+
+  return {
+    provider: 'openrouter',
+    apiKey,
+    baseUrl: normalizeBaseUrl(process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1'),
+    model: process.env.OPENROUTER_MODEL || process.env.AI_MODEL || 'deepseek/deepseek-v3.2'
+  };
+}
+
+function getConfiguredProviderName(): string {
+  return process.env.AI_PROVIDER || 'openrouter';
+}
+
+function hasAIConfig(): boolean {
+  return getAIConfig() !== null;
+}
+
+async function createChatCompletion(messages: ChatMessage[], options: { temperature: number; maxTokens: number }): Promise<string> {
+  const config = getAIConfig();
+  if (!config) {
+    throw new Error(`AI provider "${getConfiguredProviderName()}" is not fully configured`);
+  }
+
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: config.model,
+      messages,
+      temperature: options.temperature,
+      max_tokens: options.maxTokens,
+      stream: false,
+      ...(config.provider === 'minimax' ? { reasoning_split: true } : {})
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`AI request failed (${response.status}): ${errorText.slice(0, 300)}`);
+  }
+
+  const result = (await response.json()) as ChatCompletionResponse;
+  const rawContent = result.choices?.[0]?.message?.content || '';
+  return typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+}
 
 // ========== Query Expansion（查询扩展） ==========
 
@@ -23,16 +124,15 @@ export async function expandKeyword(keyword: string): Promise<string[]> {
   // 不管 AI 是否可用，先提取基础核心词
   const coreTerms = extractCoreTerms(keyword);
 
-  if (!process.env.OPENROUTER_API_KEY) {
+  if (!hasAIConfig()) {
     const result = [keyword, ...coreTerms];
     expansionCache.set(keyword, result);
     return result;
   }
 
   try {
-    const result = await openRouter.chat.send({
-      model: 'deepseek/deepseek-v3.2',
-      messages: [
+    const responseContent = await createChatCompletion(
+      [
         {
           role: 'system',
           content: `你是一个搜索查询扩展专家。给定一个监控关键词，生成该关键词的变体和相关检索词，用于文本匹配。
@@ -53,12 +153,9 @@ export async function expandKeyword(keyword: string): Promise<string[]> {
           content: keyword
         }
       ],
-      temperature: 0.2,
-      maxTokens: 300
-    });
+      { temperature: 0.2, maxTokens: 300 }
+    );
 
-    const rawContent = result.choices[0]?.message?.content || '';
-    const responseContent = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
     const jsonMatch = responseContent.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       const parsed: string[] = JSON.parse(jsonMatch[0]);
@@ -152,8 +249,8 @@ export async function analyzeContent(content: string, keyword: string, preMatchR
   // 默认预匹配结果
   const matchResult = preMatchResult ?? { matched: false, matchedTerms: [] };
 
-  if (!process.env.OPENROUTER_API_KEY) {
-    console.warn('OpenRouter API key not configured, using fallback analysis');
+  if (!hasAIConfig()) {
+    console.warn(`AI provider "${getConfiguredProviderName()}" not configured, using fallback analysis`);
     return {
       isReal: true,
       relevance: matchResult.matched ? 50 : 20,
@@ -167,9 +264,8 @@ export async function analyzeContent(content: string, keyword: string, preMatchR
   try {
     const prompt = buildAnalysisPrompt(keyword, matchResult);
 
-    const result = await openRouter.chat.send({
-      model: 'deepseek/deepseek-v3.2',
-      messages: [
+    const responseContent = await createChatCompletion(
+      [
         {
           role: 'system',
           content: prompt
@@ -179,12 +275,8 @@ export async function analyzeContent(content: string, keyword: string, preMatchR
           content: content.slice(0, 2000) // 限制内容长度
         }
       ],
-      temperature: 0.2, // 降低温度，提高判断一致性
-      maxTokens: 500
-    });
-
-    const rawContent = result.choices[0]?.message?.content || '';
-    const responseContent = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent);
+      { temperature: 0.2, maxTokens: 500 } // 降低温度，提高判断一致性
+    );
     
     // 尝试解析 JSON
     const jsonMatch = responseContent.match(/\{[\s\S]*\}/);

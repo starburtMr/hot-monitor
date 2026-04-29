@@ -29,9 +29,9 @@ cd yupi-hot-monitor
 
 ## 第二步：获取 API Key
 
-项目需要 **1 个必需的 API Key**，另外 2 个为可选。
+项目需要 **1 个 AI API Key**，你可以从 OpenRouter、MiniMax Token Plan 或任意 OpenAI 兼容服务中任选一种；另外 2 个能力为可选。
 
-### ✅ 必需：OpenRouter API Key
+### ✅ 方式一：OpenRouter API Key
 
 OpenRouter 是一个统一的 AI 大模型接入平台，注册即可使用。
 
@@ -41,6 +41,23 @@ OpenRouter 是一个统一的 AI 大模型接入平台，注册即可使用。
 4. 确保账户有一定额度（新用户通常有免费额度）
 
 > 💡 如果账户没有额度，需要在 [Credits 页面](https://openrouter.ai/settings/credits) 充值少量金额（几美元即可用很久）。
+
+### ✅ 方式二：MiniMax Token Plan API Key
+
+如果你购买的是 MiniMax Token Plan，可以使用 Token Plan 专属 API Key。
+
+1. 打开 [MiniMax Token Plan](https://platform.minimaxi.com/user-center/basic-information/interface-key)
+2. 获取 Token Plan API Key
+3. 在 `.env` 中设置 `AI_PROVIDER=minimax`
+
+> ⚠️ MiniMax Token Plan API Key 与按量计费文本模型 API Key 不可互换。
+
+### ✅ 方式三：通用 OpenAI 兼容接口
+
+如果你使用的是其他 OpenAI 兼容服务，需要准备：
+- Base URL，例如 `https://api.example.com/v1`
+- API Key
+- 模型名
 
 ### 🔧 可选：Twitter API Key
 
@@ -69,7 +86,9 @@ OpenRouter 是一个统一的 AI 大模型接入平台，注册即可使用。
 cp server/.env.example server/.env
 ```
 
-用任意文本编辑器打开 `server/.env` 文件，填入你的 API Key：
+用任意文本编辑器打开 `server/.env` 文件，选择一种 AI 配置方式。
+
+**OpenRouter：**
 
 ```env
 # 数据库（无需修改）
@@ -79,9 +98,40 @@ DATABASE_URL="file:./dev.db"
 PORT=3001
 CLIENT_URL=http://localhost:5173
 
-# ✅ 必填：OpenRouter AI
+AI_PROVIDER=openrouter
 OPENROUTER_API_KEY=sk-or-v1-你的key粘贴到这里
+OPENROUTER_MODEL=deepseek/deepseek-v3.2
+```
 
+**MiniMax Token Plan：**
+
+```env
+DATABASE_URL="file:./dev.db"
+PORT=3001
+CLIENT_URL=http://localhost:5173
+
+AI_PROVIDER=minimax
+MINIMAX_API_KEY=你的_minimax_token_plan_key
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_MODEL=MiniMax-M2.7
+```
+
+**通用 OpenAI 兼容接口：**
+
+```env
+DATABASE_URL="file:./dev.db"
+PORT=3001
+CLIENT_URL=http://localhost:5173
+
+AI_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=https://你的服务地址/v1
+OPENAI_COMPATIBLE_API_KEY=你的_api_key
+OPENAI_COMPATIBLE_MODEL=你的模型名
+```
+
+可选配置继续填在同一个 `.env` 中：
+
+```env
 # 🔧 选填：Twitter API（不填则不抓取 Twitter 数据）
 TWITTER_API_KEY=你的twitter_api_key
 
@@ -212,7 +262,7 @@ npx prisma generate
 ### Q3：热点搜索没有结果
 
 **可能原因**：
-1. OpenRouter API Key 未填写或额度不足 → 检查 `.env` 中的 `OPENROUTER_API_KEY`
+1. AI API Key 未填写或额度不足 → 检查 `.env` 中的 `AI_PROVIDER` 及对应 key
 2. 关键词太冷门 → 尝试更热门的关键词，如 "AI"、"ChatGPT"
 3. 网络问题导致搜索引擎爬虫失败 → 检查终端日志中是否有报错信息
 

@@ -7,14 +7,29 @@
  * 运行方式：
  *   npx vitest run src/__tests__/aiRelevance.test.ts
  * 
- * 注意：需要配置 OPENROUTER_API_KEY 环境变量才能调用真实 AI。
+ * 注意：需要配置 AI_PROVIDER 及对应 API Key 环境变量才能调用真实 AI。
  * 如果未配置，测试会跳过（不会失败）。
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { analyzeContent, expandKeyword, preMatchKeyword } from '../services/ai.js';
 
-const HAS_API_KEY = !!process.env.OPENROUTER_API_KEY;
+const HAS_API_KEY = Boolean(
+  process.env.OPENROUTER_API_KEY ||
+  process.env.MINIMAX_API_KEY ||
+  process.env.OPENAI_COMPATIBLE_API_KEY ||
+  process.env.AI_API_KEY
+);
+
+function restoreEnv(originalEnv: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+}
 
 // ========== 测试用例定义 ==========
 
@@ -251,8 +266,18 @@ describe.skipIf(!HAS_API_KEY)('AI 相关性判断准确度（真实 AI 调用）
 describe('AI Fallback 行为（无 API Key）', () => {
   it('preMatch=true 时 fallback 给出较高默认分', async () => {
     // 临时清空 API key 测试 fallback
-    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalEnv = {
+      AI_PROVIDER: process.env.AI_PROVIDER,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+      OPENAI_COMPATIBLE_API_KEY: process.env.OPENAI_COMPATIBLE_API_KEY,
+      AI_API_KEY: process.env.AI_API_KEY
+    };
+    process.env.AI_PROVIDER = 'openrouter';
     process.env.OPENROUTER_API_KEY = '';
+    process.env.MINIMAX_API_KEY = '';
+    process.env.OPENAI_COMPATIBLE_API_KEY = '';
+    process.env.AI_API_KEY = '';
     
     try {
       const result = await analyzeContent(
@@ -263,13 +288,23 @@ describe('AI Fallback 行为（无 API Key）', () => {
       expect(result.relevance).toBe(50);
       expect(result.keywordMentioned).toBe(true);
     } finally {
-      process.env.OPENROUTER_API_KEY = originalKey || '';
+      restoreEnv(originalEnv);
     }
   });
 
   it('preMatch=false 时 fallback 给出较低默认分', async () => {
-    const originalKey = process.env.OPENROUTER_API_KEY;
+    const originalEnv = {
+      AI_PROVIDER: process.env.AI_PROVIDER,
+      OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+      MINIMAX_API_KEY: process.env.MINIMAX_API_KEY,
+      OPENAI_COMPATIBLE_API_KEY: process.env.OPENAI_COMPATIBLE_API_KEY,
+      AI_API_KEY: process.env.AI_API_KEY
+    };
+    process.env.AI_PROVIDER = 'openrouter';
     process.env.OPENROUTER_API_KEY = '';
+    process.env.MINIMAX_API_KEY = '';
+    process.env.OPENAI_COMPATIBLE_API_KEY = '';
+    process.env.AI_API_KEY = '';
     
     try {
       const result = await analyzeContent(
@@ -280,7 +315,7 @@ describe('AI Fallback 行为（无 API Key）', () => {
       expect(result.relevance).toBe(20);
       expect(result.keywordMentioned).toBe(false);
     } finally {
-      process.env.OPENROUTER_API_KEY = originalKey || '';
+      restoreEnv(originalEnv);
     }
   });
 });

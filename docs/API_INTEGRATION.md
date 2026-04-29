@@ -1,62 +1,66 @@
 # 🔌 API 集成技术文档
 
-## 1. OpenRouter API 集成
+## 1. AI OpenAI-Compatible 集成
 
-### 1.1 SDK 安装
+后端 AI 层统一通过 OpenAI 兼容的 `POST /chat/completions` 协议调用模型，支持三种提供商：
+
+| Provider | `AI_PROVIDER` | Base URL | 默认模型 |
+|----------|---------------|----------|----------|
+| OpenRouter | `openrouter` | `https://openrouter.ai/api/v1` | `deepseek/deepseek-v3.2` |
+| MiniMax Token Plan | `minimax` | `https://api.minimaxi.com/v1` | `MiniMax-M2.7` |
+| 通用 OpenAI 兼容服务 | `openai-compatible` | 用户自定义 | 用户自定义 |
+
+### 1.1 环境变量
+
+**OpenRouter：**
+
+```env
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-v1-xxx
+OPENROUTER_MODEL=deepseek/deepseek-v3.2
+```
+
+**MiniMax Token Plan：**
+
+```env
+AI_PROVIDER=minimax
+MINIMAX_API_KEY=your_minimax_token_plan_api_key
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_MODEL=MiniMax-M2.7
+```
+
+MiniMax Token Plan 注意事项：
+- Token Plan API Key 是专属 key，与按量计费 API Key 不可互换。
+- M2.7 / M2.7-highspeed 按请求额度计算，每 5 小时滚动重置。
+
+**通用 OpenAI 兼容接口：**
+
+```env
+AI_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_BASE_URL=https://your-provider.example.com/v1
+OPENAI_COMPATIBLE_API_KEY=your_api_key
+OPENAI_COMPATIBLE_MODEL=your-model-name
+```
+
+### 1.2 Chat Completion 调用
 
 ```bash
-npm install @openrouter/sdk
-```
-
-### 1.2 基本配置
-
-```typescript
-import { OpenRouter } from "@openrouter/sdk";
-
-const openRouter = new OpenRouter({
-  apiKey: process.env.OPENROUTER_API_KEY ?? "",
-});
-```
-
-### 1.3 Chat Completion 调用
-
-```typescript
-// 非流式调用
-async function analyzeHotspot(content: string) {
-  const result = await openRouter.chat.send({
-    model: "openai/gpt-4",
-    messages: [
-      {
-        role: "system",
-        content: `你是一个热点分析专家，请分析以下内容：
-1. 判断是否为真实的热点新闻（排除标题党、假新闻）
-2. 评估该热点与 AI 编程领域的相关性（0-100分）
-3. 评估热点的重要程度（low/medium/high/urgent）
-4. 生成简短摘要（50字以内）
-
-输出 JSON 格式：
-{
-  "isReal": true/false,
-  "relevance": 0-100,
-  "importance": "low/medium/high/urgent",
-  "summary": "..."
-}`
-      },
-      {
-        role: "user",
-        content: content
-      }
+curl "$AI_BASE_URL/chat/completions" \
+  -H "Authorization: Bearer $AI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniMax-M2.7",
+    "messages": [
+      { "role": "system", "content": "你是一个热点分析专家。" },
+      { "role": "user", "content": "请分析这条热点内容..." }
     ],
-    stream: false,
-    temperature: 0.3,
-    maxTokens: 500
-  });
-
-  return JSON.parse(result.choices[0].message.content);
-}
+    "temperature": 0.2,
+    "max_tokens": 500,
+    "stream": false
+  }'
 ```
 
-### 1.4 响应格式
+### 1.3 响应格式
 
 ```json
 {
